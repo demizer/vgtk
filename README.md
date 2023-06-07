@@ -8,7 +8,7 @@ Write a native application for Gnome in vlang
 
 **How**
 
-Use gobject-introspection to generate the bindings.
+Use gobject-introspection xml files to generate the bindings.
 
 Inspired by https://github.com/diamondburned/gotk4/
 
