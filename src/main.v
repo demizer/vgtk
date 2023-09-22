@@ -1,6 +1,6 @@
 module main
 
-// import walkingdevel.vxml
+import walkingdevel.vxml
 import os
 import regex
 
@@ -67,6 +67,7 @@ fn includes_from_file(content string) ![]string {
 fn recurse_imports(mut imports Imports, start GtkIRNamespace) !Imports {
 	imports << start
 	for v in start.includes {
+		// TODO: only read first 10kb of the file to make it faster
 		content := os.read_file(v)!
 		includes := includes_from_file(content)!
 		pname := package_name_from_file(content)!
@@ -106,6 +107,46 @@ fn new_gtk_ir_namespace(path string) !&GtkIRNamespace {
 }
 
 fn main() {
-	gir_p := new_parser() or { panic(err) }
-	println(gir_p.unique_imports())
+	// gir_p := new_parser() or { panic(err) }
+	// println(gir_p.unique_imports())
+	//
+	ggir := vxml.parse_file('/usr/share/gir-1.0/Gtk-4.0.gir') or { panic(err) }
+
+	classes := ggir.get_elements_by_predicate(fn (node &vxml.Node) bool {
+		return node.name == 'class'
+	})
+
+	// println(posts.first().get_text())
+	for cls in classes {
+		// println('mac: ${mac}')
+		name := cls.attributes['name']
+		typ := cls.attributes['c:type']
+		// println('name: ${name}')
+		// println('type: ${typ}')
+		if name == 'Application' {
+			// println(cls.children)
+			cons := cls.get_elements_by_predicate(fn (node &vxml.Node) bool {
+				return node.name == 'constructor'
+			})
+			ret_type := '&C.${typ}'
+			mut param_str := ''
+			params := cons[0].children.last().children
+			for i, param in params {
+				param_str += param.attributes['name'] + ' '
+				typ2 := param.children.last()
+				param_str += match typ2.attributes['c:type'] {
+					'const char*' { '&char' }
+					else { typ2.attributes['c:type'] }
+				}
+				if i < params.len - 1 {
+					param_str += ', '
+				}
+			}
+			print('fn C.${cons[0].attributes['c:identifier']}(${param_str}) ${ret_type}')
+		}
+	}
+
+	// output the file
+
+	// TODO
 }
