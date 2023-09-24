@@ -10,16 +10,15 @@ mut:
 }
 
 fn (n XMLWrap) filter_by_predicate(name string) ?XMLWrap {
+	mut pnodes := []&vxml.Node{}
 	for nnode in n.nodes {
-		pnodes := nnode.get_elements_by_predicate(fn [name] (node &vxml.Node) bool {
+		pnodes << nnode.get_elements_by_predicate(fn [name] (node &vxml.Node) bool {
 			return node.name == name
 		})
-
-		return XMLWrap{
-			nodes: pnodes
-		}
 	}
-	return none
+	return XMLWrap{
+		nodes: pnodes
+	}
 }
 
 fn (n XMLWrap) get_attribute(name string) !string {
@@ -168,22 +167,31 @@ fn translate_ctype_to_v(typ string) string {
 	}
 }
 
+fn dump_constructors(p Parser) ! {
+	classes := p.root.filter_by_class_name('') or { return }
+	cons := classes.filter_by_predicate('constructor') or { return }
+	for con in cons {
+		typ := con.get_attribute('c:identifier')!
+		ret_val := cons.filter_by_predicate('return-value') or { return }
+		ret_typp := ret_val.filter_by_predicate('type') or { return }
+		ret_typ := ret_typp.get_attribute('c:type')!
+		ret_type := '&C.${ret_typ.replace('*', '')}'
+		mut param_str := ''
+		params := cons.get_params() or { return }
+		for i, param in params {
+			param_str += param.get_attribute('name')! + ' '
+			typ2 := param.get_element_by_tag_name('type')!
+			param_str += translate_ctype_to_v(typ2.attributes['c:type']).replace('*',
+				'')
+			if i < params.nodes.len - 1 {
+				param_str += ', '
+			}
+		}
+		println('fn C.${typ}(${param_str}) ${ret_type}')
+	}
+}
+
 fn main() {
 	gir_p := new_parser() or { panic(err) }
-	app := gir_p.root.filter_by_class_name('Application') or { return }
-	cons := app.filter_by_predicate('constructor') or { return }
-	typ := cons.get_attribute('c:identifier')!
-	ret_typ := cons.filter_by_predicate('return-value')?.filter_by_predicate('type')?.get_attribute('c:type')!
-	ret_type := '&C.${ret_typ.replace('*', '')}'
-	mut param_str := ''
-	params := cons.get_params()?
-	for i, param in params {
-		param_str += param.get_attribute('name')! + ' '
-		typ2 := param.get_element_by_tag_name('type')!
-		param_str += translate_ctype_to_v(typ2.attributes['c:type'])
-		if i < params.nodes.len - 1 {
-			param_str += ', '
-		}
-	}
-	println('fn C.${typ}(${param_str}) ${ret_type}')
+	dump_constructors(gir_p)!
 }
