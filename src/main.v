@@ -3,6 +3,50 @@ module main
 import walkingdevel.vxml
 import os
 
+struct XMLWrap {
+	nodes []&vxml.Node
+mut:
+	current_idx int = -1
+}
+
+fn (n XMLWrap) filter_by_predicate(name string) ?XMLWrap {
+	for nnode in n.nodes {
+		pnodes := nnode.get_elements_by_predicate(fn [name] (node &vxml.Node) bool {
+			return node.name == name
+		})
+
+		return XMLWrap{
+			nodes: pnodes
+		}
+	}
+	return none
+}
+
+fn (n XMLWrap) get_attribute(name string) !string {
+	return n.nodes.first().attributes[name]
+}
+
+fn (n XMLWrap) get_params() ?XMLWrap {
+	for nnode in n.nodes {
+		pnodes := nnode.get_elements_by_predicate(fn (node &vxml.Node) bool {
+			return node.name == 'parameter'
+		})
+
+		return XMLWrap{
+			nodes: pnodes
+		}
+	}
+	return none
+}
+
+fn (mut n XMLWrap) next() ?&vxml.Node {
+	n.current_idx++
+	if n.current_idx >= n.nodes.len {
+		return none
+	}
+	return n.nodes[n.current_idx]
+}
+
 struct GtkIRNamespace {
 	name         string
 	package_name string
@@ -12,17 +56,21 @@ struct GtkIRNamespace {
 	parsed       vxml.Node
 }
 
-fn (g GtkIRNamespace) filter_by_class_name(name string) ?[]&vxml.Node {
+fn (g GtkIRNamespace) filter_by_class_name(name string) ?XMLWrap {
 	classes := g.parsed.get_elements_by_predicate(fn (node &vxml.Node) bool {
 		return node.name == 'class'
 	})
 	for cls in classes {
 		if cls.attributes['name'] == name {
-			return [cls]
+			return XMLWrap{
+				nodes: [cls]
+			}
 		}
 	}
 	if name == '' {
-		return classes
+		return XMLWrap{
+			nodes: classes
+		}
 	}
 	return none
 }
@@ -113,41 +161,29 @@ fn new_gir_namespace(path string) !&GtkIRNamespace {
 	}
 }
 
+fn translate_ctype_to_v(typ string) string {
+	return match typ {
+		'const char*' { '&char' }
+		else { typ }
+	}
+}
+
 fn main() {
 	gir_p := new_parser() or { panic(err) }
-	println(gir_p.root.filter_by_class_name('Label'))
-
-	// // println(posts.first().get_text())
-	// for cls in classes {
-	// 	// println('mac: ${mac}')
-	// 	name := cls.attributes['name']
-	// 	typ := cls.attributes['c:type']
-	// 	// println('name: ${name}')
-	// 	// println('type: ${typ}')
-	// 	if name == 'Application' {
-	// 		// println(cls.children)
-	// 		cons := cls.get_elements_by_predicate(fn (node &vxml.Node) bool {
-	// 			return node.name == 'constructor'
-	// 		})
-	// 		ret_type := '&C.${typ}'
-	// 		mut param_str := ''
-	// 		params := cons[0].children.last().children
-	// 		for i, param in params {
-	// 			param_str += param.attributes['name'] + ' '
-	// 			typ2 := param.children.last()
-	// 			param_str += match typ2.attributes['c:type'] {
-	// 				'const char*' { '&char' }
-	// 				else { typ2.attributes['c:type'] }
-	// 			}
-	// 			if i < params.len - 1 {
-	// 				param_str += ', '
-	// 			}
-	// 		}
-	// 		print('fn C.${cons[0].attributes['c:identifier']}(${param_str}) ${ret_type}')
-	// 	}
-	// }
-
-	// output the file
-
-	// TODO
+	app := gir_p.root.filter_by_class_name('Application') or { return }
+	cons := app.filter_by_predicate('constructor') or { return }
+	typ := cons.get_attribute('c:identifier')!
+	ret_typ := cons.filter_by_predicate('return-value')?.filter_by_predicate('type')?.get_attribute('c:type')!
+	ret_type := '&C.${ret_typ.replace('*', '')}'
+	mut param_str := ''
+	params := cons.get_params()?
+	for i, param in params {
+		param_str += param.get_attribute('name')! + ' '
+		typ2 := param.get_element_by_tag_name('type')!
+		param_str += translate_ctype_to_v(typ2.attributes['c:type'])
+		if i < params.nodes.len - 1 {
+			param_str += ', '
+		}
+	}
+	println('fn C.${typ}(${param_str}) ${ret_type}')
 }
