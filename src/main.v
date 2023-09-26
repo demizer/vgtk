@@ -60,7 +60,7 @@ fn (g GtkIRNamespace) filter_by_class_name(name string) ?XMLWrap {
 		return node.name == 'class'
 	})
 	for cls in classes {
-		if cls.attributes['name'] == name {
+		if cls.attributes['name'].to_lower() == name.to_lower() {
 			return XMLWrap{
 				nodes: [cls]
 			}
@@ -168,10 +168,33 @@ fn translate_ctype_to_v(typ string) string {
 }
 
 fn dump_constructors(p Parser) ! {
+	activated := ['gtk_application_', 'gtk_window_']
+
+	// last work: I had just figured out that I should implement class down
+	//
+	// "Application" class
+	// -> contructor (gtk_application_new)
+	// -> methods (???)
+
+	// "Window" class
+	// -> contructor (gtk_window_new)
+	// -> methods (gtk_window_set_default_size)
+
 	classes := p.root.filter_by_class_name('') or { return }
 	cons := classes.filter_by_predicate('constructor') or { return }
 	for con in cons {
 		typ := con.get_attribute('c:identifier')!
+		mut found := false
+		for active in activated {
+			if typ.contains(active) {
+				found = true
+				// println(active)
+				// continue outer
+			}
+		}
+		if !found {
+			continue
+		}
 		ret_val := cons.filter_by_predicate('return-value') or { return }
 		ret_typp := ret_val.filter_by_predicate('type') or { return }
 		ret_typ := ret_typp.get_attribute('c:type')!
@@ -191,7 +214,109 @@ fn dump_constructors(p Parser) ! {
 	}
 }
 
+// fn render_class_constructor()
+
+// fn render_c_decl() {
+// 	classes := p.root.filter_by_class_name('application') or { return }
+// 	cons := classes.filter_by_predicate('constructor') or { return }
+// 	for con in cons {
+// 		typ := con.get_attribute('c:identifier')!
+// 		mut found := false
+// 		for active in activated {
+// 			if typ.contains(active) {
+// 				found = true
+// 				// println(active)
+// 				// continue outer
+// 			}
+// 		}
+// 		if !found {
+// 			continue
+// 		}
+// 		ret_val := cons.filter_by_predicate('return-value') or { return }
+// 		ret_typp := ret_val.filter_by_predicate('type') or { return }
+// 		ret_typ := ret_typp.get_attribute('c:type')!
+// 		ret_type := '&C.${ret_typ.replace('*', '')}'
+// 		mut param_str := ''
+// 		params := cons.get_params() or { return }
+// 		for i, param in params {
+// 			param_str += param.get_attribute('name')! + ' '
+// 			typ2 := param.get_element_by_tag_name('type')!
+// 			param_str += translate_ctype_to_v(typ2.attributes['c:type']).replace('*',
+// 				'')
+// 			if i < params.nodes.len - 1 {
+// 				param_str += ', '
+// 			}
+// 		}
+// 		println('fn C.${typ}(${param_str}) ${ret_type}')
+// 	}
+// }
+
+fn dump_class(doc string, cls &vxml.Node) {
+	name := cls.attributes['name']
+	c_name := cls.attributes['c:type']
+	// FIXME: Doc comment must match def for vdoc: https://docs.vosca.dev/concepts/writing-documentation.html
+	for l in doc.split_into_lines() {
+		println('// ${l}')
+	}
+	println('
+	pub struct ${name} {
+		c &C.${c_name}
+	}')
+}
+
+fn render_application_class(p Parser) ! {
+	acls := p.root.filter_by_class_name('application') or { return error('class not found') }
+	for con in acls {
+		for c in con.children {
+			match c.name {
+				'doc' {
+					dump_class(c.get_text(), acls.nodes.first())
+				}
+				'source-position', 'implements' {}
+				else {
+					println('not implemented: ${c.name}')
+					continue
+				}
+			}
+		}
+		break
+	}
+	// cons := classes.filter_by_predicate('constructor') or { return }
+	// for con in cons {
+	// 	typ := con.get_attribute('c:identifier')!
+	// 	mut found := false
+	// 	for active in activated {
+	// 		if typ.contains(active) {
+	// 			found = true
+	// 			// println(active)
+	// 			// continue outer
+	// 		}
+	// 	}
+	// 	if !found {
+	// 		continue
+	// 	}
+	// 	ret_val := cons.filter_by_predicate('return-value') or { return }
+	// 	ret_typp := ret_val.filter_by_predicate('type') or { return }
+	// 	ret_typ := ret_typp.get_attribute('c:type')!
+	// 	ret_type := '&C.${ret_typ.replace('*', '')}'
+	// 	mut param_str := ''
+	// 	params := cons.get_params() or { return }
+	// 	for i, param in params {
+	// 		param_str += param.get_attribute('name')! + ' '
+	// 		typ2 := param.get_element_by_tag_name('type')!
+	// 		param_str += translate_ctype_to_v(typ2.attributes['c:type']).replace('*',
+	// 			'')
+	// 		if i < params.nodes.len - 1 {
+	// 			param_str += ', '
+	// 		}
+	// 	}
+	// 	println('fn C.${typ}(${param_str}) ${ret_type}')
+	// }
+}
+
 fn main() {
 	gir_p := new_parser() or { panic(err) }
-	dump_constructors(gir_p)!
+	// println(gir_p)
+	// dump_constructors(gir_p)!
+	render_application_class(gir_p)!
 }
